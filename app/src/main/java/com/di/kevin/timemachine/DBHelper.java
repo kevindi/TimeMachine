@@ -20,6 +20,7 @@ public class DBHelper extends SQLiteOpenHelper {
     @Override
     public void onCreate(SQLiteDatabase database) {
         database.execSQL(LocationDataSource.CRATE_TABLE_LOCATION);
+        database.execSQL(TimeLogDataSource.CREATE_TABLE_TIME_LOG);
     }
 
     @Override

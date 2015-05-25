@@ -3,6 +3,15 @@
     <string name="title_activity_maps">Map</string>
     <string name="title_activity_dialog">DialogActivity</string>
 
-    <string name="hello_world">Hello world!</string>
     <string name="action_settings">Settings</string>
+    <string name="location_name">Location Name:</string>
+    <string name="create_new_location">Create New Location</string>
+    <string name="lat">Lat:</string>
+    <string name="lng">Lng:</string>
+    <string name="location_created">Location created</string>
+    <string name="database_error">Database error</string>
+    <string name="check_input">Please check all the input fields</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+
 </resources>
