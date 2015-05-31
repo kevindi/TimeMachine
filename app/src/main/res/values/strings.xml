@@ -4,7 +4,7 @@
     <string name="title_activity_dialog">DialogActivity</string>
 
     <string name="action_settings">Settings</string>
-    <string name="location_name">Location Name:</string>
+    <string name="location_name">Name:</string>
     <string name="create_new_location">Create New Location</string>
     <string name="lat">Lat:</string>
     <string name="lng">Lng:</string>
@@ -13,5 +13,9 @@
     <string name="check_input">Please check all the input fields</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
+    <string name="no_time_table">You are not near any known location</string>
+    <string name="hint_location_name">Home</string>
+    <string name="location_scope">Scope:</string>
+    <string name="choose_icon_for_location">Choose Icon for the Location</string>
 
 </resources>

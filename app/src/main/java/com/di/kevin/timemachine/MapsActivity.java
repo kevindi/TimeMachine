@@ -1,26 +1,33 @@
 package com.di.kevin.timemachine;
 
-import android.app.DialogFragment;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
-import android.database.Cursor;
 import android.location.Location;
 import android.os.IBinder;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.widget.TextView;
 import android.widget.Toast;
 
-import com.di.kevin.timemachine.object.MyLocation;
-import com.di.kevin.timemachine.view.CreateLocationDialog;
-import com.di.kevin.timemachine.view.TimeLogDialog;
+import com.di.kevin.timemachine.bean.TimeLog;
+import com.di.kevin.timemachine.dialog.SuperTableDialog;
+import com.di.kevin.timemachine.listener.LocationChangedListener;
+import com.di.kevin.timemachine.bean.MyLocation;
+import com.di.kevin.timemachine.dialog.CreateLocationDialog;
+import com.di.kevin.timemachine.dialog.TimeLogDialog;
+import com.di.kevin.timemachine.service.LocationService;
 import com.google.android.gms.maps.CameraUpdate;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptor;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.Circle;
+import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
@@ -28,24 +35,37 @@ import com.google.android.gms.maps.model.MarkerOptions;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MapsActivity extends FragmentActivity implements LocationChangedListener,
         CreateLocationDialog.LocationCreateConfirmListener, GoogleMap.OnMarkerClickListener,
-        GoogleMap.OnMapLongClickListener {
+        GoogleMap.OnMapLongClickListener, GoogleMap.OnInfoWindowClickListener {
 
     private GoogleMap mMap; // Might be null if Google Play services APK is not available.
     private final String TAG = MapsActivity.class.getSimpleName();
     private boolean mInitCameraPos = true;
-    private Location myLocation;
+    private Location currentLocation;
     private LocationChangedListener mMyLocationChangedListener;
 
     private HashMap<String, Long> myMarkers;
+    private TextView tvCurrentLocationInfo;
+    private Circle mCurrentCircle;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Log.d(TAG, "onCreate");
         setContentView(R.layout.activity_maps);
+
+        findViewById(R.id.btn_show_super).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SuperTableDialog dialog = new SuperTableDialog();
+                dialog.show(getFragmentManager(), SuperTableDialog.class.getSimpleName());
+            }
+        });
+
+        tvCurrentLocationInfo = (TextView) findViewById(R.id.refresh_timer);
 
         myMarkers = new HashMap<>();
 
@@ -56,8 +76,8 @@ public class MapsActivity extends FragmentActivity implements LocationChangedLis
             public void onClick(View v) {
 
                 LatLng latLng = null;
-                if (myLocation != null) {
-                    latLng = new LatLng(myLocation.getLatitude(), myLocation.getLongitude());
+                if (currentLocation != null) {
+                    latLng = new LatLng(currentLocation.getLatitude(), currentLocation.getLongitude());
                 }
                 showCreateLocationDialog(latLng, false);
             }
@@ -132,6 +152,7 @@ public class MapsActivity extends FragmentActivity implements LocationChangedLis
         mMap.setMyLocationEnabled(true);
         mMap.setOnMarkerClickListener(this);
         mMap.setOnMapLongClickListener(this);
+        mMap.setOnInfoWindowClickListener(this);
 
         mMap.setOnMyLocationChangeListener(new GoogleMap.OnMyLocationChangeListener() {
             @Override
@@ -158,6 +179,7 @@ public class MapsActivity extends FragmentActivity implements LocationChangedLis
 
             Iterator iterator = locations.iterator();
             while (iterator.hasNext()) {
+
                 MyLocation location = (MyLocation) iterator.next();
 
                 addNewMarker(location);
@@ -219,9 +241,32 @@ public class MapsActivity extends FragmentActivity implements LocationChangedLis
     public void onLocationChanged(Location newLocation) {
         Log.d(TAG, "onLocationChanged lat: " + newLocation.getLatitude() + " lng: " + newLocation.getLongitude());
 
-        this.myLocation = newLocation;
+        this.currentLocation = newLocation;
+
+        refreshShowCurrentLocationInfo();
+
         if (mMyLocationChangedListener != null) {
             mMyLocationChangedListener.onLocationChanged(newLocation);
+        }
+    }
+
+    private void refreshShowCurrentLocationInfo() {
+        if (mBound) {
+            ConcurrentHashMap<Long, TimeLog> currentLocationTimeTable = mService.getCurrentLocationTimeTable();
+            if (currentLocationTimeTable.values().isEmpty()) {
+                tvCurrentLocationInfo.setText(getString(R.string.no_time_table));
+            } else {
+                Iterator<TimeLog> iterator = currentLocationTimeTable.values().iterator();
+
+                String info = "";
+
+                while (iterator.hasNext()){
+                    TimeLog timeLog = iterator.next();
+                    info += "Loc ID: " + timeLog.getMyLocationId() + " Since: " + timeLog.getEnterTime() + "\n";
+                 }
+
+                tvCurrentLocationInfo.setText(info);
+            }
         }
     }
 
@@ -239,6 +284,13 @@ public class MapsActivity extends FragmentActivity implements LocationChangedLis
         if (mMap != null) {
             Marker marker = mMap.addMarker(new MarkerOptions().position(new LatLng(location.getLocationLat(), location.getLocationLng()))
                     .title(location.getLocationName()));
+            marker.setDraggable(true);
+            marker.setIcon(BitmapDescriptorFactory.defaultMarker());
+
+            if (location.getImageRes() != 0) {
+                marker.setIcon(BitmapDescriptorFactory.fromResource(location.getImageRes()));
+            }
+            Log.d(TAG, "loc_id: " + location.getLocationId() + " radius: " + location.getScope());
 
             myMarkers.put(marker.getId(), location.getLocationId());
         }
@@ -254,15 +306,18 @@ public class MapsActivity extends FragmentActivity implements LocationChangedLis
                 MyLocation location = mService.getMyLocations().get(locationId);
 
                 if (location != null) {
+                    if (mMap != null) {
+                        CircleOptions circleOptions = new CircleOptions()
+                                .center(new LatLng(location.getLocationLat(), location.getLocationLng()))
+                                .radius(location.getScope()).fillColor(R.color.circle_fill).strokeWidth(1f).strokeColor(R.color.circle_stroke);
 
-                    TimeLogDialog dialog = new TimeLogDialog();
-                    Bundle bundle = new Bundle();
-                    bundle.putLong(TimeLogDialog.KEY_LOCATION_ID, location.getLocationId());
-                    dialog.setArguments(bundle);
+                        if (mCurrentCircle != null) {
+                            mCurrentCircle.remove();
+                        }
+                        mCurrentCircle = mMap.addCircle(circleOptions);
 
-                    dialog.show(getFragmentManager(), TimeLogDialog.class.getSimpleName());
-
-                    Toast.makeText(this, "Click " + location.getLocationName(), Toast.LENGTH_LONG).show();
+                        marker.showInfoWindow();
+                    }
                 }
             }
         }
@@ -271,9 +326,25 @@ public class MapsActivity extends FragmentActivity implements LocationChangedLis
 
     @Override
     public void onMapLongClick(LatLng latLng) {
-
         Log.d(TAG, "onMapLongClick lat: " + latLng.latitude + " lng: " + latLng.longitude);
-
         showCreateLocationDialog(latLng, true);
+    }
+
+    @Override
+    public void onInfoWindowClick(Marker marker) {
+        Long locationId = myMarkers.get(marker.getId());
+
+        if (locationId != null) {
+
+            if (mBound) {
+                MyLocation location = mService.getMyLocations().get(locationId);
+
+                TimeLogDialog dialog = new TimeLogDialog();
+                Bundle bundle = new Bundle();
+                bundle.putLong(TimeLogDialog.KEY_LOCATION_ID, location.getLocationId());
+                dialog.setArguments(bundle);
+                dialog.show(getFragmentManager(), TimeLogDialog.class.getSimpleName());
+            }
+        }
     }
 }
